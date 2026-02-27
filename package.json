@@ -1,0 +1,30 @@
+{
+  "name": "webview-hub",
+  "version": "1.0.0",
+  "description": "Multi-site webview hub",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^40.6.1",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "com.webviewhub.app",
+    "productName": "WebView Hub",
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "setting/**"
+    ],
+    "extraFiles": [
+      { "from": "README.md", "to": "README.md" }
+    ],
+    "win": {
+      "target": "zip"
+    }
+  }
+}

@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebView Hub</title>
+  <style>
+    :root {
+      --bg:         #0b0b14;
+      --surface:    #11111e;
+      --surface2:   #18182c;
+      --border:     #1e1e32;
+      --accent:     #6366f1;
+      --accent-dim: rgba(99,102,241,0.12);
+      --accent-txt: #a5b4fc;
+      --text:       #ddddf0;
+      --muted:      #55556e;
+      --danger:     #f87171;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--bg);
+      font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+      color: var(--text);
+    }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    #header {
+      height: 44px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      gap: 6px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      user-select: none;
+      overflow: hidden;
+    }
+
+    #tab-bar {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
+    #tab-bar::-webkit-scrollbar { display: none; }
+
+    .tab {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 8px 5px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      border: 1px solid transparent;
+      color: var(--muted);
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .tab:hover { color: var(--text); background: var(--surface2); }
+    .tab.active { color: var(--accent-txt); background: var(--accent-dim); border-color: rgba(99,102,241,0.3); }
+
+    .tab-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; outline: none; }
+
+    .tab-close {
+      width: 16px; height: 16px;
+      border-radius: 3px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px;
+      opacity: 0;
+      border: none; background: transparent; color: var(--muted);
+      cursor: pointer; transition: all 0.15s; line-height: 1; padding: 0;
+    }
+    .tab:hover .tab-close { opacity: 0.5; }
+    .tab-close:hover { opacity: 1 !important; background: rgba(248,113,113,0.2); color: var(--danger); }
+
+    #add-tab-btn {
+      width: 28px; height: 28px;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; line-height: 1;
+      color: var(--muted); cursor: pointer;
+      border: none; background: transparent; flex-shrink: 0;
+      transition: all 0.15s;
+    }
+    #add-tab-btn:hover { color: var(--text); background: var(--surface2); }
+
+    /* Header action buttons (导入 / 导出) */
+    .header-action-btn {
+      padding: 4px 10px; border-radius: 5px; font-size: 12px;
+      color: var(--muted); cursor: pointer; flex-shrink: 0;
+      border: 1px solid var(--border); background: transparent;
+      transition: all 0.15s; white-space: nowrap;
+    }
+    .header-action-btn:hover { color: var(--text); border-color: var(--muted); }
+
+    /* ── Workspace ──────────────────────────────────────────── */
+    #workspace {
+      flex: 1; min-height: 0;
+      display: flex; overflow: hidden;
+    }
+
+    /* ── Main pane ──────────────────────────────────────────── */
+    #main-pane {
+      flex-shrink: 0;
+      position: relative;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    /* 绝对定位铺满 #main-pane，display:flex 让内部 webview 能用 flex:1 */
+    #main-slot {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #main-iframe { display: flex; flex: 1; width: 100%; min-height: 0; border: none; }
+
+    #main-empty {
+      position: absolute; inset: 0;
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center; gap: 14px;
+      background: var(--bg);
+    }
+    #main-empty.show { display: flex; }
+
+    /* ── Vertical divider ─────────────────────────────────── */
+    #v-divider {
+      width: 5px; flex-shrink: 0;
+      background: var(--border); cursor: col-resize;
+      position: relative; z-index: 20;
+      transition: background 0.15s;
+    }
+    #v-divider:hover, #v-divider.active { background: var(--accent); }
+
+    /* ── Side pane ──────────────────────────────────────────── */
+    #side-pane {
+      flex: 1; min-width: 0;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+
+    #side-slots {
+      flex: 1; min-height: 0;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Side slot ──────────────────────────────────────────── */
+    .side-slot {
+      position: relative; overflow: hidden;
+      background: var(--bg); min-height: 0;
+    }
+    .side-slot iframe, .side-slot webview { position: absolute; inset: 0; width: 100%; height: 100%; border: none; }
+
+    .slot-empty {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 10px; background: var(--surface);
+    }
+
+    /* ── Horizontal divider ─────────────────────────────────── */
+    .h-divider {
+      height: 5px; flex-shrink: 0;
+      background: var(--border); cursor: row-resize;
+      transition: background 0.15s;
+    }
+    .h-divider:hover, .h-divider.active { background: var(--accent); }
+
+    /* ── Side footer ────────────────────────────────────────── */
+    #side-footer {
+      flex-shrink: 0; height: 36px;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--surface); border-top: 1px solid var(--border);
+    }
+    #add-side-btn {
+      font-size: 12px; color: var(--muted); cursor: pointer;
+      padding: 4px 12px; border-radius: 5px; transition: all 0.15s;
+    }
+    #add-side-btn:hover { color: var(--accent-txt); background: var(--accent-dim); }
+
+    /* ── Floating controls ──────────────────────────────────── */
+    .pane-controls {
+      position: absolute; top: 8px; right: 8px;
+      z-index: 10; display: flex; gap: 4px;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s;
+    }
+    #main-pane:hover  .pane-controls { opacity: 1; pointer-events: auto; }
+    .side-slot:hover  .pane-controls { opacity: 1; pointer-events: auto; }
+
+    /* ── Pane title ─────────────────────────────────────────── */
+    .pane-title {
+      position: absolute; top: 8px; left: 8px;
+      z-index: 10; max-width: calc(100% - 90px);
+      padding: 4px 10px;
+      background: rgba(11,11,20,0.85); backdrop-filter: blur(8px);
+      border: 1px solid var(--border); border-radius: 6px;
+      font-size: 12px; color: var(--text); white-space: nowrap;
+      overflow: hidden;
+      display: flex; align-items: center; gap: 6px;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s;
+    }
+    .pane-title img {
+      width: 14px; height: 14px;
+      object-fit: contain; flex-shrink: 0;
+    }
+    .pane-title span { overflow: hidden; text-overflow: ellipsis; }
+    #main-pane:hover .pane-title { opacity: 1; }
+    .side-slot:hover  .pane-title { opacity: 1; pointer-events: auto; cursor: pointer; }
+    .side-slot:hover  .pane-title:hover { border-color: var(--accent); color: var(--accent-txt); }
+
+    .ctrl-btn {
+      width: 28px; height: 28px;
+      background: rgba(11,11,20,0.85); backdrop-filter: blur(8px);
+      border: 1px solid var(--border); border-radius: 7px;
+      color: var(--text); font-size: 14px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s;
+    }
+    .ctrl-btn:hover        { background: var(--accent-dim); border-color: var(--accent); }
+    .ctrl-btn.danger:hover { background: rgba(248,113,113,0.18); border-color: var(--danger); color: var(--danger); }
+
+    /* ── Empty state shared ─────────────────────────────────── */
+    .e-icon { font-size: 36px; opacity: 0.15; }
+    .e-text { font-size: 13px; color: var(--muted); }
+    .e-btn {
+      padding: 7px 18px; background: var(--accent); color: #fff;
+      border: none; border-radius: 6px; font-size: 13px;
+      cursor: pointer; transition: opacity 0.15s;
+    }
+    .e-btn:hover { opacity: 0.85; }
+
+    /* ── Modal ──────────────────────────────────────────────── */
+    #modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.55); backdrop-filter: blur(5px);
+      z-index: 1000; display: flex; align-items: center; justify-content: center;
+    }
+    #modal-backdrop.hidden { display: none; }
+    #modal-box {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 24px; width: 360px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    }
+    .modal-title { font-size: 15px; font-weight: 600; margin-bottom: 18px; }
+    .modal-field { margin-bottom: 14px; }
+    .modal-label {
+      display: block; font-size: 11px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px;
+    }
+    .modal-input {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 7px; padding: 8px 11px; font-size: 13px;
+      color: var(--text); outline: none; transition: border-color 0.15s;
+    }
+    .modal-input:focus { border-color: var(--accent); }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+    .btn { padding: 7px 16px; border-radius: 7px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; transition: all 0.15s; }
+    .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { opacity: 0.88; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────────── -->
+<div id="header">
+  <div id="tab-bar">
+    <button id="add-tab-btn" title="新建分组">+</button>
+  </div>
+  <button class="header-action-btn" id="import-btn" title="从文件导入配置">↓ 导入</button>
+  <button class="header-action-btn" id="export-btn" title="导出配置到文件">↑ 导出</button>
+  <input type="file" id="import-file" accept=".json" style="display:none">
+</div>
+
+<!-- ── Workspace ─────────────────────────────────────────── -->
+<div id="workspace">
+
+  <div id="main-pane">
+    <div id="main-slot">
+      <webview id="main-iframe" partition="persist:hub" allowpopups></webview>
+    </div>
+    <div class="pane-title" id="main-title"></div>
+    <div class="pane-controls" id="main-controls">
+      <button class="ctrl-btn" id="main-edit-btn" title="更换网站">✏</button>
+      <button class="ctrl-btn danger" id="main-remove-btn" title="移除">✕</button>
+    </div>
+    <div id="main-empty">
+      <div class="e-icon">🌐</div>
+      <div class="e-text">暂无主网站</div>
+      <button class="e-btn" id="empty-main-btn">＋ 添加网站</button>
+    </div>
+  </div>
+
+  <div id="v-divider"></div>
+
+  <div id="side-pane">
+    <div id="side-slots"></div>
+    <div id="side-footer">
+      <div id="add-side-btn">＋ 添加侧边网站</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Modal ─────────────────────────────────────────────── -->
+<div id="modal-backdrop" class="hidden">
+  <div id="modal-box">
+    <div class="modal-title">添加网站</div>
+    <div class="modal-field">
+      <label class="modal-label" for="input-url">网址</label>
+      <input id="input-url" class="modal-input" type="url"
+             placeholder="https://example.com" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label" for="input-name">名称（可选）</label>
+      <input id="input-name" class="modal-input" type="text"
+             placeholder="留空则自动识别" autocomplete="off">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-cancel">取消</button>
+      <button class="btn btn-primary" id="btn-confirm">添加</button>
+    </div>
+  </div>
+</div>
+
+<!-- 拖拽遮罩：阻止 iframe 在拖拽时吞噬鼠标事件 -->
+<div id="drag-shield" style="display:none;position:fixed;inset:0;z-index:9999;"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  Environment
+// ═══════════════════════════════════════════════════════════════
+const IS_ELECTRON = !!window.electronAPI;
+
+// ═══════════════════════════════════════════════════════════════
+//  State & persistence
+// ═══════════════════════════════════════════════════════════════
+const STORAGE_KEY = 'webview-hub-v2';
+const mkId = () => 'g' + Date.now() + Math.random().toString(36).slice(2, 5);
+
+function defaultState() {
+  const id = mkId();
+  return {
+    splitPct: 65,
+    activeGroupId: id,
+    groups: [{
+      id,
+      name: 'AI 资讯',
+      main: { name: 'Hacker News', url: 'https://news.ycombinator.com' },
+      sides: [
+        { name: 'Lobste.rs',       url: 'https://lobste.rs',           flex: 33 },
+        { name: 'GitHub Trending', url: 'https://github.com/trending', flex: 33 },
+        { name: 'V2EX',            url: 'https://www.v2ex.com',        flex: 34 },
+      ]
+    }]
+  };
+}
+
+let state = defaultState();
+
+const save = () => {
+  const json = JSON.stringify(state);
+  localStorage.setItem(STORAGE_KEY, json);
+  if (IS_ELECTRON) {
+    window.electronAPI.setConfig(state).catch(() => {});
+  }
+};
+const activeGroup = () => state.groups.find(g => g.id === state.activeGroupId) || state.groups[0];
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+// Build favicon + name HTML for .pane-title
+function titleHtml(site) {
+  let favicon = '';
+  try { favicon = new URL(site.url).origin + '/favicon.ico'; } catch {}
+  const img = favicon
+    ? `<img src="${esc(favicon)}" onerror="this.style.display='none'">`
+    : '';
+  return `${img}<span>${esc(site.name)}</span>`;
+}
+
+// Normalize flex values so they sum to 100
+function normalizeFlex(g) {
+  if (!g.sides.length) return;
+  const total = g.sides.reduce((s, x) => s + (x.flex || 1), 0);
+  g.sides.forEach(x => { x.flex = +(x.flex * 100 / total).toFixed(4); });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  DOM refs
+// ═══════════════════════════════════════════════════════════════
+const tabBarEl    = document.getElementById('tab-bar');
+const workspaceEl = document.getElementById('workspace');
+const mainPaneEl  = document.getElementById('main-pane');
+const mainIfrEl   = document.getElementById('main-iframe');
+const mainEmptyEl = document.getElementById('main-empty');
+const sideSlotsEl = document.getElementById('side-slots');
+const vDividerEl  = document.getElementById('v-divider');
+const dragShield  = document.getElementById('drag-shield');
+const modalEl     = document.getElementById('modal-backdrop');
+const inputUrl    = document.getElementById('input-url');
+const inputName   = document.getElementById('input-name');
+
+// #main-pane 高度直接同步 workspace 真实像素高度，绕开 Electron flex 继承问题
+new ResizeObserver(entries => {
+  const h = entries[0].contentRect.height;
+  if (h > 0) mainPaneEl.style.height = h + 'px';
+}).observe(workspaceEl);
+
+// ═══════════════════════════════════════════════════════════════
+//  Render: Tab bar
+// ═══════════════════════════════════════════════════════════════
+function renderTabs() {
+  // Preserve the + button element (and its listener) across innerHTML clears
+  const addBtn = document.getElementById('add-tab-btn');
+  tabBarEl.innerHTML = '';
+
+  state.groups.forEach(g => {
+    const tab = document.createElement('div');
+    tab.className = 'tab' + (g.id === state.activeGroupId ? ' active' : '');
+    tab.innerHTML = `<span class="tab-name">${esc(g.name)}</span>
+      <button class="tab-close" title="关闭">✕</button>`;
+
+    tab.addEventListener('click', e => {
+      if (e.target.closest('.tab-close')) return;
+      // Skip re-render if already active so dblclick can fire on the same element
+      if (state.activeGroupId === g.id) return;
+      state.activeGroupId = g.id;
+      save(); renderAll();
+    });
+    tab.addEventListener('dblclick', e => {
+      if (e.target.closest('.tab-close')) return;
+      renameTab(tab, g);
+    });
+    tab.querySelector('.tab-close').addEventListener('click', () => {
+      if (state.groups.length === 1) return;
+      state.groups = state.groups.filter(x => x.id !== g.id);
+      if (state.activeGroupId === g.id) state.activeGroupId = state.groups[0].id;
+      save(); renderAll();
+    });
+    tabBarEl.appendChild(tab);
+  });
+
+  // Re-attach + button at the end of the tab list
+  tabBarEl.appendChild(addBtn);
+}
+
+function renameTab(tabEl, group) {
+  const nameEl = tabEl.querySelector('.tab-name');
+  const prev = group.name;
+  nameEl.contentEditable = 'true';
+  nameEl.focus();
+  const range = document.createRange();
+  range.selectNodeContents(nameEl);
+  const sel = window.getSelection();
+  sel.removeAllRanges(); sel.addRange(range);
+
+  let done = false;
+  const commit = () => {
+    if (done) return; done = true;
+    nameEl.contentEditable = 'false';
+    group.name = nameEl.textContent.trim() || prev;
+    save(); renderTabs();
+  };
+  nameEl.addEventListener('blur', commit, { once: true });
+  nameEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { done = true; nameEl.contentEditable = 'false'; nameEl.textContent = prev; renderTabs(); }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Render: Main pane
+// ═══════════════════════════════════════════════════════════════
+function renderMain() {
+  const g = activeGroup();
+  mainPaneEl.style.width = (state.splitPct || 65) + '%';
+  // 同步写入高度，确保 webview 导航时尺寸不为 0
+  const wh = workspaceEl.clientHeight;
+  if (wh > 0) mainPaneEl.style.height = wh + 'px';
+
+  const titleEl = document.getElementById('main-title');
+  if (!g?.main) {
+    mainIfrEl.style.display = 'none';
+    mainEmptyEl.classList.add('show');
+    document.getElementById('main-controls').style.display = 'none';
+    titleEl.innerHTML = '';
+  } else {
+    mainIfrEl.style.display = 'flex';
+    mainEmptyEl.classList.remove('show');
+    document.getElementById('main-controls').style.display = '';
+    titleEl.innerHTML = titleHtml(g.main);
+    if (mainIfrEl.src !== g.main.url) mainIfrEl.src = g.main.url;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Render: Side slots
+// ═══════════════════════════════════════════════════════════════
+function renderSidePane() {
+  const g = activeGroup();
+  sideSlotsEl.innerHTML = '';
+  if (!g?.sides.length) return;
+
+  g.sides.forEach((site, i) => {
+    // ── Slot ──
+    const slot = document.createElement('div');
+    slot.className = 'side-slot';
+    slot.style.flex = String(site.flex || 1);
+
+    // webview 通过 createElement 创建（比 innerHTML 更可靠）
+    const wv = document.createElement('webview');
+    wv.setAttribute('src', site.url);
+    wv.setAttribute('partition', 'persist:hub');
+    wv.setAttribute('allowpopups', '');
+    slot.appendChild(wv);
+
+    // 标题和控制按钮保留原有方式
+    const overlayFrag = document.createElement('div');
+    overlayFrag.innerHTML = `
+      <div class="pane-title">${titleHtml(site)}</div>
+      <div class="pane-controls">
+        <button class="ctrl-btn" data-a="edit" title="更换网站">✏</button>
+        <button class="ctrl-btn danger" data-a="del" title="移除">✕</button>
+      </div>`;
+    while (overlayFrag.firstChild) slot.appendChild(overlayFrag.firstChild);
+
+    slot.querySelector('[data-a="edit"]').addEventListener('click', () =>
+      showModal({ type: 'side', i }, site));
+    slot.querySelector('[data-a="del"]').addEventListener('click', () => {
+      g.sides.splice(i, 1);
+      normalizeFlex(g);
+      save(); renderAll();
+    });
+    slot.querySelector('.pane-title').addEventListener('dblclick', () => {
+      const main = g.main;
+      const { name, url, flex } = g.sides[i];
+      g.sides[i] = main ? { name: main.name, url: main.url, flex } : null;
+      g.main = { name, url };
+      if (!g.sides[i]) { g.sides.splice(i, 1); normalizeFlex(g); }
+      save(); renderAll();
+    });
+    sideSlotsEl.appendChild(slot);
+
+    // ── Horizontal divider between slots ──
+    if (i < g.sides.length - 1) {
+      const hd = document.createElement('div');
+      hd.className = 'h-divider';
+      hd.addEventListener('mousedown', e => startHDrag(e, hd, g, i));
+      sideSlotsEl.appendChild(hd);
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Full render
+// ═══════════════════════════════════════════════════════════════
+function renderAll() {
+  renderTabs();
+  renderMain();
+  renderSidePane();
+}
+
+// ── Async startup: Electron config first, localStorage fallback ──
+(async () => {
+  let loaded = false;
+  if (IS_ELECTRON) {
+    try {
+      const data = await window.electronAPI.getConfig();
+      if (data?.groups?.length && data?.activeGroupId) {
+        state = data;
+        loaded = true;
+      }
+    } catch {}
+  }
+  if (!loaded) {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      if (saved?.groups?.length && saved?.activeGroupId) state = saved;
+    } catch {}
+  }
+  if (!state.groups.find(g => g.id === state.activeGroupId))
+    state.activeGroupId = state.groups[0]?.id;
+  renderAll();
+})();
+
+// ═══════════════════════════════════════════════════════════════
+//  Header buttons
+// ═══════════════════════════════════════════════════════════════
+document.getElementById('add-tab-btn').addEventListener('click', () => {
+  const id = mkId();
+  state.groups.push({ id, name: '新分组', main: null, sides: [] });
+  state.activeGroupId = id;
+  save(); renderAll();
+});
+
+document.getElementById('main-edit-btn').addEventListener('click', () =>
+  showModal({ type: 'main' }, activeGroup().main));
+
+document.getElementById('main-remove-btn').addEventListener('click', () => {
+  activeGroup().main = null; save(); renderMain();
+});
+
+document.getElementById('empty-main-btn').addEventListener('click', () =>
+  showModal({ type: 'main' }, null));
+
+document.getElementById('add-side-btn').addEventListener('click', () =>
+  showModal({ type: 'side', i: -1 }, null));
+
+// ═══════════════════════════════════════════════════════════════
+//  Modal
+// ═══════════════════════════════════════════════════════════════
+let _target = null;
+
+function showModal(target, site) {
+  _target = target;
+  inputUrl.value  = site?.url  || '';
+  inputName.value = site?.name || '';
+  inputName.placeholder = '留空则自动识别';
+  document.querySelector('.modal-title').textContent = site ? '编辑网站' : '添加网站';
+  document.getElementById('btn-confirm').textContent = site ? '保存' : '添加';
+  modalEl.classList.remove('hidden');
+  setTimeout(() => inputUrl.focus(), 30);
+}
+
+function hideModal() { modalEl.classList.add('hidden'); _target = null; }
+
+function confirmModal() {
+  let url = inputUrl.value.trim();
+  if (!url) return;
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+
+  let name = inputName.value.trim();
+  if (!name) {
+    try { name = new URL(url).hostname.replace(/^www\./, ''); }
+    catch { name = url; }
+  }
+
+  const g = activeGroup();
+  const t = _target;
+
+  if (t.type === 'main') {
+    g.main = { name, url };
+  } else if (t.i === -1) {
+    // Add new side site — steal space proportionally from existing slots
+    const n = g.sides.length;
+    g.sides.forEach(s => { s.flex = s.flex * n / (n + 1); });
+    g.sides.push({ name, url, flex: 100 / (n + 1) });
+  } else {
+    g.sides[t.i] = { ...g.sides[t.i], name, url };
+  }
+
+  save(); hideModal(); renderAll();
+}
+
+document.getElementById('btn-cancel').addEventListener('click', hideModal);
+document.getElementById('btn-confirm').addEventListener('click', confirmModal);
+modalEl.addEventListener('click', e => { if (e.target === modalEl) hideModal(); });
+
+[inputUrl, inputName].forEach(el => el.addEventListener('keydown', e => {
+  if (e.key === 'Enter') confirmModal();
+  if (e.key === 'Escape') hideModal();
+}));
+
+inputUrl.addEventListener('input', () => {
+  if (inputName.value.trim()) return;
+  try {
+    const raw = inputUrl.value.trim();
+    const u = new URL(/^https?:\/\//i.test(raw) ? raw : 'https://' + raw);
+    inputName.placeholder = u.hostname.replace(/^www\./, '');
+  } catch { inputName.placeholder = '留空则自动识别'; }
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  Vertical divider drag (left ↔ right)
+// ═══════════════════════════════════════════════════════════════
+let vDrag = false, vX0 = 0, vW0 = 0;
+
+vDividerEl.addEventListener('mousedown', e => {
+  e.preventDefault();
+  vDrag = true;
+  vX0   = e.clientX;
+  vW0   = mainPaneEl.offsetWidth;
+  vDividerEl.classList.add('active');
+  dragShield.style.cursor = 'col-resize';
+  dragShield.style.display = 'block';
+  document.body.style.userSelect = 'none';
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  Horizontal divider drag (up ↔ down between side slots)
+// ═══════════════════════════════════════════════════════════════
+let hDrag  = false;
+let hEl    = null, hGrp = null, hIdx = 0;
+let hY0    = 0, hFlexA0 = 0, hFlexB0 = 0;
+let hSlotA = null, hSlotB = null;
+
+function startHDrag(e, el, g, idx) {
+  e.preventDefault();
+  hDrag   = true;
+  hEl     = el;
+  hGrp    = g;
+  hIdx    = idx;
+  hY0     = e.clientY;
+  hFlexA0 = g.sides[idx].flex;
+  hFlexB0 = g.sides[idx + 1].flex;
+
+  // Slots and dividers alternate; slot[i] is child index i*2
+  const slots = sideSlotsEl.querySelectorAll('.side-slot');
+  hSlotA = slots[idx];
+  hSlotB = slots[idx + 1];
+
+  el.classList.add('active');
+  dragShield.style.cursor = 'row-resize';
+  dragShield.style.display = 'block';
+  document.body.style.userSelect = 'none';
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Shared mouse events
+// ═══════════════════════════════════════════════════════════════
+document.addEventListener('mousemove', e => {
+  if (vDrag) {
+    const totalW = document.getElementById('workspace').offsetWidth;
+    const pct    = Math.max(20, Math.min(80, (vW0 + e.clientX - vX0) / totalW * 100));
+    mainPaneEl.style.width = pct + '%';
+  }
+
+  if (hDrag) {
+    const totalH    = sideSlotsEl.offsetHeight;
+    const allFlex   = hGrp.sides.reduce((s, x) => s + x.flex, 0);
+    const delta     = (e.clientY - hY0) * allFlex / totalH;
+    const combined  = hFlexA0 + hFlexB0;
+    const minFlex   = combined * 0.08;          // min ~8% of combined height
+    const newA      = Math.max(minFlex, Math.min(combined - minFlex, hFlexA0 + delta));
+    hSlotA.style.flex = String(newA);
+    hSlotB.style.flex = String(combined - newA);
+  }
+});
+
+document.addEventListener('mouseup', () => {
+  const wasDragging = vDrag || hDrag;
+
+  if (vDrag) {
+    state.splitPct = parseFloat(mainPaneEl.style.width);
+    vDividerEl.classList.remove('active');
+    vDrag = false;
+    save();
+  }
+
+  if (hDrag) {
+    hGrp.sides[hIdx].flex     = parseFloat(hSlotA.style.flex);
+    hGrp.sides[hIdx + 1].flex = parseFloat(hSlotB.style.flex);
+    hEl.classList.remove('active');
+    hDrag = false;
+    save();
+  }
+
+  if (wasDragging) {
+    dragShield.style.display = 'none';
+    document.body.style.userSelect = '';
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  导出 / 导入
+// ═══════════════════════════════════════════════════════════════
+document.getElementById('export-btn').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob), download: 'webview-hub.json'
+  });
+  a.click();
+});
+
+document.getElementById('import-btn').addEventListener('click', () =>
+  document.getElementById('import-file').click());
+
+document.getElementById('import-file').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      if (data.groups && data.activeGroupId) { state = data; save(); renderAll(); }
+    } catch { alert('配置文件格式错误'); }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+});
+</script>
+</body>
+</html>

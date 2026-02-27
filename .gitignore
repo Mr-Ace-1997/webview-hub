@@ -1,0 +1,5 @@
+node_modules/
+dist/win-unpacked/
+dist/WebView-Hub-win/
+.claude/
+*.log
