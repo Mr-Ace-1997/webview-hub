@@ -17,10 +17,10 @@
     "files": [
       "main.js",
       "preload.js",
-      "index.html",
-      "setting/**"
+      "index.html"
     ],
     "extraFiles": [
+      { "from": "setting", "to": "setting" },
       { "from": "README.md", "to": "README.md" }
     ],
     "win": {

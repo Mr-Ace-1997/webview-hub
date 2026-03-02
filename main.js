@@ -2,7 +2,8 @@ const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
 const fs   = require('fs')
 
-const CONFIG_DIR  = path.join(__dirname, 'setting')
+const APP_DIR     = app.isPackaged ? path.dirname(app.getPath('exe')) : __dirname
+const CONFIG_DIR  = path.join(APP_DIR, 'setting')
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json')
 
 function createWindow() {
