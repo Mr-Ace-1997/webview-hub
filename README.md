@@ -21,8 +21,8 @@
 
 ### 方式一：直接运行（推荐，无需安装任何环境）
 
-1. 解压 `WebView-Hub-win.zip`
-2. 双击 `WebView Hub.exe` 即可运行
+1. 下载并解压 `dist/WebView-Hub-win.zip`
+2. 双击解压后目录下 `WebView Hub.exe` 即可运行
 
 > 无需安装 Node.js、Python 或任何其他软件。
 
